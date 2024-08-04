@@ -19,16 +19,17 @@ package com.alibaba.nacos.persistence.datasource;
 import com.alibaba.nacos.common.utils.CollectionUtils;
 import com.alibaba.nacos.common.utils.Preconditions;
 import com.alibaba.nacos.common.utils.StringUtils;
+import com.alibaba.nacos.persistence.utils.EncryptUtils;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 import static com.alibaba.nacos.common.utils.CollectionUtils.getOrDefault;
+import static com.alibaba.nacos.persistence.utils.LogUtil.FATAL_LOG;
 
 /**
  * Properties of external DataSource.
@@ -38,7 +39,9 @@ import static com.alibaba.nacos.common.utils.CollectionUtils.getOrDefault;
 public class ExternalDataSourceProperties {
     
     private static final String JDBC_DRIVER_NAME = "com.mysql.cj.jdbc.Driver";
-    
+
+    private static final String DB_ENCRYPT_PREFIX = "ENC(";
+
     private static final String TEST_QUERY = "SELECT 1";
     
     private Integer num;
@@ -87,7 +90,16 @@ public class ExternalDataSourceProperties {
             }
             poolProperties.setJdbcUrl(url.get(index).trim());
             poolProperties.setUsername(getOrDefault(user, index, user.get(0)).trim());
-            poolProperties.setPassword(getOrDefault(password, index, password.get(0)).trim());
+            String pass = getOrDefault(password, index, password.get(0)).trim();
+            try {
+                if (pass.contains(DB_ENCRYPT_PREFIX)) {
+                    poolProperties.setPassword(EncryptUtils.aesDecryptStr(pass.substring(4, pass.length() - 1)));
+                } else {
+                    poolProperties.setPassword(pass);
+                }
+            } catch (Exception e) {
+                FATAL_LOG.error("datasource decrypt error", e);
+            }
             HikariDataSource ds = poolProperties.getDataSource();
             if (StringUtils.isEmpty(ds.getConnectionTestQuery())) {
                 ds.setConnectionTestQuery(TEST_QUERY);
