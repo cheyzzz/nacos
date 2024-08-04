@@ -13,6 +13,7 @@
 
 package com.alibaba.nacos.config.server.service.datasource;
 
+import com.alibaba.nacos.config.server.utils.EncryptUtils;
 import com.google.common.base.Preconditions;
 import com.zaxxer.hikari.HikariDataSource;
 import org.apache.commons.collections.CollectionUtils;
@@ -26,6 +27,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import static com.alibaba.nacos.common.utils.CollectionUtils.getOrDefault;
+import static com.alibaba.nacos.config.server.utils.LogUtil.FATAL_LOG;
 
 /**
  * Properties of external DataSource.
@@ -33,35 +35,37 @@ import static com.alibaba.nacos.common.utils.CollectionUtils.getOrDefault;
  * @author Nacos
  */
 public class ExternalDataSourceProperties {
-    
+
     private static final String JDBC_DRIVER_NAME = "com.mysql.cj.jdbc.Driver";
-    
+
     private static final String TEST_QUERY = "SELECT 1";
-    
+
+    private static final String DB_ENCRYPT_PREFIX = "ENC(";
+
     private Integer num;
-    
+
     private List<String> url = new ArrayList<>();
-    
+
     private List<String> user = new ArrayList<>();
-    
+
     private List<String> password = new ArrayList<>();
-    
+
     public void setNum(Integer num) {
         this.num = num;
     }
-    
+
     public void setUrl(List<String> url) {
         this.url = url;
     }
-    
+
     public void setUser(List<String> user) {
         this.user = user;
     }
-    
+
     public void setPassword(List<String> password) {
         this.password = password;
     }
-    
+
     /**
      * Build serveral HikariDataSource.
      *
@@ -82,7 +86,17 @@ public class ExternalDataSourceProperties {
             poolProperties.setDriverClassName(JDBC_DRIVER_NAME);
             poolProperties.setJdbcUrl(url.get(index).trim());
             poolProperties.setUsername(getOrDefault(user, index, user.get(0)).trim());
-            poolProperties.setPassword(getOrDefault(password, index, password.get(0)).trim());
+            String pass = getOrDefault(password, index, password.get(0)).trim();
+            //数据库密码解密
+            try {
+                if (pass.contains(DB_ENCRYPT_PREFIX)) {
+                    poolProperties.setPassword(EncryptUtils.aesDecryptStr(pass.substring(4, pass.length() - 1)));
+                } else {
+                    poolProperties.setPassword(pass);
+                }
+            } catch (Exception e) {
+                FATAL_LOG.error("datasource decrypt error", e);
+            }
             HikariDataSource ds = poolProperties.getDataSource();
             ds.setConnectionTestQuery(TEST_QUERY);
             ds.setIdleTimeout(TimeUnit.MINUTES.toMillis(10L));
@@ -93,9 +107,9 @@ public class ExternalDataSourceProperties {
         Preconditions.checkArgument(CollectionUtils.isNotEmpty(dataSources), "no datasource available");
         return dataSources;
     }
-    
+
     interface Callback<D> {
-        
+
         /**
          * Perform custom logic.
          *
